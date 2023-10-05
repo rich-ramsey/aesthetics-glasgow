@@ -4,6 +4,8 @@ This project is the aesthetics training project that was based in Glasgow.
 
 ## There are four main R markdown files: ##
 
+These files are based within an R project called 'glasgow.Rproj'
+
 1. wrangle.Rmd
 
 This file wrangles raw data, produces some summary data plots, saves out data files for modelling and further analysis in later scripts.

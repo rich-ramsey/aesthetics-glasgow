@@ -47,7 +47,7 @@ this is good for plotting, if you've already wrangled and saved the data before.
 If you haven't already wrangled and saved, then skip this chunk.
 
 ```{r}
-# # analysi-s 1 - pre vs post
+# # analysis 1 - pre vs post
 # data_long_pp <- read_csv("data/data_long_pp.csv") %>%
 #   mutate(pid = factor(pid),
 #          item = factor(item),
@@ -69,7 +69,7 @@ If you haven't already wrangled and saved, then skip this chunk.
 #           condition = factor(condition,
 #                             levels = c("pre_sorolla", "post_sorolla", "post_sorolla_new",
 #                                        "post_gauguin", "post_merritt_chase")),
-#           training_type = factor(training_type, 
+#           training_type = factor(training_type,
 #                                 levels = c("none", "brief", "full")),
 #           dv = factor(dv,
 #                      levels = c("understanding", "creativity", "thinking", "challenge")))
@@ -789,45 +789,72 @@ ggsave ("figures/ratings_pp_sorolla_training_type.jpeg",plot = p5.5, width = 20,
 what about some density plots maybe??
 
 ```{r}
-ggplot(data_long_pp, aes(x = ratings, fill = training)) +
+p5.6 <- ggplot(data_long_pp, aes(x = ratings, fill = training)) +
   geom_density(alpha = 0.7) +
   facet_grid(training_type~image_type~dv) +
-  theme_bw()
+  theme_bw() +
+  theme(legend.position = "bottom")
+p5.6
+
+ggsave ("figures/ratings_pp_density.jpeg", plot = p5.6, 
+        width = 20, height = 13, units = "in", dpi = 300)
 ```
 
+histogram
+
 ```{r}
-ggplot(data_long_pp, aes(x = ratings, fill = training)) +
+p5.7 <- ggplot(data_long_pp, aes(x = ratings, fill = training)) +
   geom_histogram(alpha = 0.7, binwidth = 0.5, position = "identity") +
   facet_grid(training_type~image_type~dv) +
-  theme_bw()
+  theme_bw() +
+  theme(legend.position = "bottom")
+p5.7
+
+ggsave ("figures/ratings_pp_hist.jpeg", plot = p5.7, 
+        width = 20, height = 13, units = "in", dpi = 300)
 ```
 
 make ratings a factor - to try a stacked bar plot
 
 ```{r}
 data_long_pp2 <- data_long_pp %>% 
-  mutate(ratings = factor(ratings))
+  mutate(ratings = factor(ratings, levels = c(1:5)))
 data_long_pp2
+str(data_long_pp2)
 ```
 
 ```{r}
-ggplot(data_long_pp2, aes(x=fct_rev(training))) +
+p5.8 <- ggplot(data_long_pp2, aes(x=fct_rev(training))) +
   geom_bar(aes(fill=fct_rev(ratings)), position = "fill") +
   coord_flip() +
-  # theme(element_text(legend.title = "rating")) +
-  # scale_fill_brewer(palette = "Accent") +
-  facet_grid(training_type~image_type~dv)
+  scale_fill_brewer(palette = "Blues", breaks = c(1:5)) +
+  facet_grid(training_type~image_type~dv) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(fill = "ratings")
+p5.8
+
+ggsave ("figures/ratings_pp_stacked.jpeg", plot = p5.8, 
+        width = 20, height = 13, units = "in", dpi = 300)
+
 ```
 
 only sorolla
 
 ```{r}
-ggplot(subset(data_long_pp2, image_type = sorolla), aes(x=fct_rev(training))) +
+p5.9 <- ggplot(subset(data_long_pp2, image_type == "sorolla"), 
+       aes(x=fct_rev(training))) +
   geom_bar(aes(fill=fct_rev(ratings)), position = "fill") +
   coord_flip() +
-  # theme(element_text(legend.title = "rating")) +
-  scale_fill_brewer(palette = "Accent") +
-  facet_grid(training_type~dv)
+  scale_fill_brewer(palette = "Blues", breaks = c(1:5)) +
+  facet_grid(training_type~dv) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(fill = "ratings")
+p5.9
+
+ggsave ("figures/ratings_pp_stacked_sorolla.jpeg", plot = p5.9, 
+        width = 20, height = 13, units = "in", dpi = 300)
 ```
 
 
@@ -904,7 +931,7 @@ plot
 
 ```{r}
 # without training_type
-p5.6 <- ggplot(datag_long_g_summary, 
+p5.10 <- ggplot(datag_long_g_summary, 
               aes(x=condition, y=mean, fill=condition)) + 
    geom_jitter(data=data_long_g_summary, aes(y=mean), position=position_jitterdodge(dodge.width =1), alpha = 1, colour = "darkgrey") +
    geom_violin(data=data_long_g_summary, aes(y=mean), alpha = 0.7, position=pd2) +
@@ -922,12 +949,12 @@ p5.6 <- ggplot(datag_long_g_summary,
    #facet_grid(training_type~dv)+
    facet_wrap(~dv)+
    ggtitle("Ratings by generalisation condition")
- p5.6
+ p5.10
 
-ggsave ("figures/ratings_g.jpeg",plot = p5.6, width = 20, height = 13, units = "in", dpi = 300)
+ggsave ("figures/ratings_g.jpeg",plot = p5.10, width = 20, height = 13, units = "in", dpi = 300)
 
 # with training_type
-p5.7 <- ggplot(datag_long_g_training, 
+p5.11 <- ggplot(datag_long_g_training, 
               aes(x=condition, y=mean, fill=condition)) + 
    geom_jitter(data=data_long_g_training, aes(y=mean), position=position_jitterdodge(dodge.width =1), 
                alpha = 1, colour = "darkgrey") +
@@ -946,11 +973,64 @@ p5.7 <- ggplot(datag_long_g_training,
    facet_grid(dv~training_type)+
    #facet_wrap(~dv)+
    ggtitle("Ratings by generalisation condition")
- p5.7
+ p5.11
 
-ggsave ("figures/ratings_g_training_type.jpeg",plot = p5.7, width = 20, height = 13, units = "in", dpi = 300)
+ggsave ("figures/ratings_g_training_type.jpeg",plot = p5.11, width = 20, height = 13, units = "in", dpi = 300)
 ```
 
+maybe try some density plots, histograms and a stacked bar plots.
+
+```{r}
+p5.12 <- ggplot(data_long_g, aes(x = ratings, fill = condition)) +
+  geom_density(alpha = 0.5) +
+  facet_grid(training_type~dv) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+p5.12
+
+ggsave ("figures/ratings_g_density.jpeg", plot = p5.12, 
+        width = 20, height = 13, units = "in", dpi = 300)
+```
+
+histogram
+
+```{r}
+p5.13 <- ggplot(data_long_g, aes(x = ratings, fill = condition)) +
+  geom_histogram(alpha = 1, binwidth = 0.5, position = "dodge") +
+  facet_grid(training_type~dv) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+p5.13
+
+ggsave ("figures/ratings_g_hist.jpeg", plot = p5.13, 
+        width = 20, height = 13, units = "in", dpi = 300)
+```
+
+make ratings a factor - to try a stacked bar plot
+
+```{r}
+data_long_g2 <- data_long_g %>% 
+  mutate(ratings = factor(ratings, levels = c(1:5)))
+data_long_g2
+str(data_long_g2)
+```
+
+now plot 
+
+```{r}
+p5.14 <- ggplot(data_long_g2, aes(x=fct_rev(condition))) +
+  geom_bar(aes(fill=fct_rev(ratings)), position = "fill") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Blues", breaks = c(1:5)) +
+  facet_grid(training_type~dv) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(fill = "ratings")
+p5.14
+
+ggsave ("figures/ratings_g_stacked.jpeg", plot = p5.14, 
+        width = 20, height = 13, units = "in", dpi = 300)
+```
 
 # section 6 #
 

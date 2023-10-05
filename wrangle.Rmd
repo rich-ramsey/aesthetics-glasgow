@@ -1,0 +1,1017 @@
+---
+title: "wrangle"
+author: "Rich & Ionela"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This file wrangles raw data from the glasgow aesthetics project. It produces some summary data plots, saves out data files for modelling and further analysis in later scripts.
+
+It is largely based on Ionela's code, which was itself built upon our prior code for running the dose-response aesthetics work previously. 
+
+## load the libraries that we will be using ## 
+
+## install ##
+
+```{r install-pkg}
+# install.packages(c("tidyverse", "RColorBrewer", "patchwork"))
+```
+
+take a snapshot of loaded packages and update the lock.file using renv
+
+```{r snapshot-renv}
+# take a snapshot and update the lock.file
+# renv::snapshot() # this is only necessary when new packages or installed or packages are updated.
+```
+
+## load ##
+
+```{r load-pkg}
+pkg <- c("tidyverse", "RColorBrewer", "patchwork")
+
+lapply(pkg, library, character.only = TRUE)
+```
+
+## section 1 ##
+
+# read in previously wrangled data, if necessary #
+
+this is good for plotting, if you've already wrangled and saved the data before.
+
+If you haven't already wrangled and saved, then skip this chunk.
+
+```{r}
+# # analysi-s 1 - pre vs post
+# data_long_pp <- read_csv("data/data_long_pp.csv") %>%
+#   mutate(pid = factor(pid),
+#          item = factor(item),
+#          training = factor(training,
+#                            levels = c("pre", "post")),
+#          image_type = factor(image_type,
+#                              levels = c("realism", "sorolla")),
+#          training_type = factor(training_type,
+#                                 levels = c("none", "brief", "full")),
+#          dv = factor(dv,
+#                      levels = c("understanding", "creativity", "thinking", "challenge")))
+# head(data_long_pp)
+# str(data_long_pp)
+# 
+# # analysis 2 - generalisation effects
+# data_long_g <- read_csv("data/data_long_g.csv") %>%
+#    mutate(pid = factor(pid),
+#           item = factor(item),
+#           condition = factor(condition,
+#                             levels = c("pre_sorolla", "post_sorolla", "post_sorolla_new",
+#                                        "post_gauguin", "post_merritt_chase")),
+#           training_type = factor(training_type, 
+#                                 levels = c("none", "brief", "full")),
+#           dv = factor(dv,
+#                      levels = c("understanding", "creativity", "thinking", "challenge")))
+# head(data_long_g)
+# str(data_long_g)
+```
+
+
+# read in data and select the variables we need #
+
+```{r}
+raw_data <- read_csv("data/data_all.csv") %>%
+  rename(pid = part_no, age = Age, sex = Sex, training_type = Training_type ) %>% # rename
+  select(pid, training_type:pre_Sor_P10_Challen, post_Real_L1_Und:post_MC_L10_Challen)
+head(raw_data)
+```
+
+# arrange the rating data in different formats #
+
+# long format #
+
+create factors for variables also.
+
+Note:
+training (pre & post)
+image_type ("Real" = realism, "Sor" = sorolla, "SorN" = new images by sorolla, "Gaug"= gauguin, "MC"= Merritt-Chase
+item - L1...L10 (L1 = landscape image no 1...L10 = landscape image no 10); P1...P10 (P1 = people image no 1...P10 = people image no 10);
+
+```{r}
+data_long <- raw_data %>% 
+  pivot_longer(cols = pre_Real_L1_Und:post_MC_L10_Challen,
+               names_sep = "_", 
+               names_to = c("training", "image_type", "item", "dv"),
+               values_to = "ratings") %>%
+  mutate(pid = factor(pid, 
+                      levels = unique(pid)),
+         training = factor(training, 
+                           levels = c("pre", "post")),
+         training_type = recode(training_type,
+                                None = "none", Brief = "brief", InDepth = "full"), ## remove caps and change labels
+         training_type = factor(training_type, 
+                                levels = c("none", "brief", "full")), ## change the order of levels
+         image_type = recode(image_type, 
+                             Real = "realism", Sor =  "sorolla", SorN = "sorolla_new", Gaug = "gauguin", MC = "merritt_chase"), 
+         image_type = factor(image_type, 
+                             levels = c("realism", "sorolla", "sorolla_new", "gauguin","merritt_chase")),
+         item = factor(item, 
+                       levels = c("L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10", 
+                                  "P1", "P2", "P3","P4", "P5","P6","P7", "P8", "P9", "P10")),
+         image_cat = if_else(str_starts(item, "L"), "landscape", "people"),
+         image_cat = factor(image_cat, 
+                            levels = c("landscape", "people")),
+         dv = recode(dv, 
+                     Und = "understanding", Creat = "creativity", Think = "thinking", Challen = "challenge"),
+         dv = factor(dv, 
+                     levels = c("understanding", "creativity", "thinking", "challenge"))) %>%
+   select(pid, training, image_type, item, image_cat, everything())
+head(data_long)
+tail(data_long)
+str(data_long)
+summary(data_long)
+
+## summary info. below
+## 84000 data points
+## 150 pt * 560 ratings
+## 80 ratings per pid, training, image_type and training_type e.g.,
+data_long %>% 
+  group_by(pid, training, image_type, training_type) %>% 
+  tally()
+## two conditions at pre-training, 5 at conditions post-training
+```
+
+data check
+
+```{r}
+data.check0 <- data_long %>% 
+  group_by(training, image_type, item, image_cat, training_type) %>%
+  tally()
+data.check0
+```
+
+recode items appropriately
+
+```{r}
+data_long <- data_long %>% 
+  mutate(item_recode = as.numeric(str_remove(item, "[LP]"))) # remove letters and make numeric
+head(data_long)
+summary(data_long)
+
+data.check1 <- data_long %>%
+  distinct(item, item_recode)
+data.check1
+```
+
+now make item numbering image-specific, such that each unique image has one number.
+
+```{r}
+data_long <- data_long %>% 
+  mutate(item_recode2 = case_when(
+   image_type == "realism" & image_cat == "landscape" ~ item_recode,
+   image_type == "realism" & image_cat == "people" ~ item_recode+10,
+   image_type == "sorolla" & image_cat == "landscape" ~ item_recode+20,
+   image_type == "sorolla" & image_cat == "people" ~ item_recode+30,
+   image_type == "sorolla_new" & image_cat == "landscape" ~ item_recode+40,
+   image_type == "sorolla_new" & image_cat == "people" ~ item_recode+50,
+   image_type == "gauguin" & image_cat == "landscape" ~ item_recode+60,
+   image_type == "gauguin" & image_cat == "people" ~ item_recode+70,
+   image_type == "merritt_chase" & image_cat == "landscape" ~ item_recode+80,
+   TRUE ~ item_recode+90
+  ))
+head(data_long)
+summary(data_long)
+
+data.check1b <- data_long %>%
+  distinct(image_type, image_cat, item, item_recode, item_recode2)  
+data.check1b
+
+data.check1c <- data_long %>%
+  group_by(training, image_type, image_cat, item, item_recode, item_recode2) %>%
+  tally()
+data.check1c
+```
+
+ok, now remove outdated item coding.
+
+```{r}
+data_long <- data_long %>% 
+  select(pid, training, image_type, image_cat, item_recode2, training_type, dv, ratings) %>% 
+  rename(item = item_recode2)
+head(data_long)
+```
+
+data check again
+
+```{r}
+data.check1d <- data_long %>%
+  group_by(training, image_type, image_cat, item, training_type) %>%
+  tally()
+data.check1d
+```
+
+# convert from long into wide format 
+
+```{r}
+data_wide <- data_long %>% 
+  pivot_wider(names_from = "dv", values_from = "ratings")
+head(data_wide)
+str(data_wide)
+summary(data_wide)
+```
+
+# summary statistics #
+
+at the pid level
+
+```{r}
+data_mean_rating <- data_long %>%
+   group_by(pid, training, image_type, training_type, dv) %>%
+   summarise(mean=mean(ratings), sd=sd(ratings))  %>%
+   ungroup() 
+head(data_mean_rating)
+```
+
+# section 2 #
+
+## split the wide data into two separate datasets that correspond to two separate analyses ##
+
+Analysis 1) A pre vs post analysis depending on training_type - involving 12 conditions: 2 x training (pre & post) x 2 image type (realism and Sorolla) x 3 training type (none, brief, full). 2x2x3 factorial. This addresses if training has had an impact from pre to post depending on training type.
+
+Analysis 2) Five conditions. pre_sorolla, post_sorolla, post_sorolla_new, post_gauguin, post_merritt_chase. Pre-sorolla as the reference category. We would then see the extent to which training generalises to unseen art.
+
+# 2.1) pre vs post - data_pp #
+
+```{r}
+# data pre and post 
+data_pp <- data_wide %>% 
+  filter(str_detect(image_type, "gauguin|merritt_chase|sorolla_new", negate = TRUE)) # using negate = TRUE means that sorolla_new, gauguin, merritt_chase will be removed
+head(data_pp)
+str(data_pp)
+summary(data_pp)
+```
+
+# check data pp #
+
+```{r}
+data.check2 <- data_pp %>%
+  group_by(training, image_type, training_type) %>% 
+  tally()
+data.check2
+```
+
+# add deviation coding #
+
+```{r}
+data_ppd <- data_pp %>%
+  mutate(training = if_else(training == "pre", -0.5, 0.5),
+         image_type = if_else(image_type == "realism", -0.5, 0.5)) 
+head(data_ppd)
+```
+
+take a look
+
+```{r}
+data.check2b <- data_ppd %>%
+  group_by(training, image_type, training_type) %>% 
+  tally()
+data.check2b
+```
+
+now check to see the deviation coding looks correct
+
+```{r}
+data_ppd_check <- data_pp %>% 
+   mutate(trainingd = recode(training, "pre" = -0.5, "post" = 0.5),
+          image_typed = recode(image_type, "realism" = -0.5, "sorolla" = 0.5))
+head(data_ppd_check)
+tail(data_ppd_check)
+```
+
+and in a different way
+
+```{r}
+data.check2c <- data_ppd_check %>%
+  group_by(training, training_type, image_type, trainingd, image_typed) %>% 
+  tally()
+data.check2c
+```
+
+# 2.2) generalisation analysis - data_g #
+
+combine training and image type into a single condition variable and filter by the relevant conditions, then make a factor.
+
+```{r}
+data_g <- data_wide %>%  
+   unite("condition", training:image_type, sep="_") %>% # combine training and image type
+   filter(str_detect(condition, c("pre_sorolla|post_sorolla|post_sorolla_new|post_gauguin|post_merritt_chase"))) %>%  # filter
+   mutate(condition = factor(condition, 
+          levels = c("pre_sorolla", "post_sorolla", "post_sorolla_new", "post_gauguin","post_merritt_chase"))) # make condition into a factor
+head(data_g)
+str(data_g)
+summary(data_g)
+```
+
+# section 3 #
+
+## attention checks questions - post-Sorolla training questions - 7 MCQs in total ##
+
+according to our pre-reg. we should exclude participants who have responded correctly to ≤ 3 questions out of 7 questions
+
+```{r}
+data_corrq <-  read_csv("data/data_corr_ques.csv") %>%
+   rename(pid=SID, training_type=Training_type, question=Question, corr_ans=PartCorrAns) %>% 
+   select(pid, training_type, question, corr_ans) %>%
+   mutate(pid = factor(pid, levels = unique(pid)),
+          question = factor(question, levels = c("Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7")),
+          training_type = recode(training_type,
+                                 InDepth = "full", Brief = "brief"), ## changed the labels here
+          training_type = factor(training_type, 
+                                 levels = c("brief", "full"))) 
+head(data_corrq)
+```
+
+create summary data using summary functions
+
+```{r}
+datac_q <- data_corrq %>%
+  group_by(training_type, question) %>% 
+  summarise(mean=mean(corr_ans),
+            sd=sd(corr_ans),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) 
+datac_q
+```
+
+convert into %
+
+```{r}
+data_perc = datac_q %>%
+  group_by(training_type, question) %>%
+  summarise(perc = mean(mean) * 100) %>%
+  ungroup()
+head(data_perc)
+```
+
+# plot % of correct answers for each 7 MCQs across all participants #
+
+```{r} 
+p3.1 <- ggplot(data_perc) +
+  aes(x = question, y = perc) +
+  geom_point(colour = "darkviolet", size=5) +
+  ylim(0, 100) +
+  theme(panel.grid = element_line(color = "#8ccde3", linewidth = 0.75, linetype = 2),
+        axis.text.x = element_text(face="bold", size=16),
+        axis.text.y = element_text(face="bold", size=16),
+        text=element_text(face="bold", size=18), title=element_text(face="bold", size=18))
+p3.1
+# ggsave ("figures/percent_corr_quest.jpeg")  
+```
+
+plot with intervals and facet by training type
+
+```{r}
+p3.2 <- ggplot(datac_q) +
+  aes(x = question, y = mean) +
+  # geom_pointrange(aes(ymin=mean-ci, ymax=mean+ci),
+  #                 colour = "darkviolet", size=1) +
+  geom_point(colour = "darkviolet", size=5) +
+  ylim(0, 1) +
+  theme(panel.grid = element_line(color = "#8ccde3", linewidth = 0.75, linetype = 2),
+        axis.text.x = element_text(face="bold", size=16),
+        axis.text.y = element_text(face="bold", size=16),
+        text=element_text(face="bold", size=18), title=element_text(face="bold", size=18)) +
+  facet_wrap(~training_type)
+p3.2
+
+ggsave ("figures/percent_corr_quest.jpeg")  
+```
+
+# summarise how many correct questions by each participant #
+
+```{r}
+data_no_corrq = data_corrq %>%
+   group_by(pid) %>%
+   summarise(freq = sum(corr_ans))
+head(data_no_corrq)
+```
+
+# how many participants got ≤ 3 questions out of 7 questions? #
+
+```{r} 
+p3.3 <- ggplot(data_no_corrq) +
+   aes(x = freq, y = pid) +
+   geom_point(colour = "darkviolet", size = 3) +  
+   scale_y_discrete() +
+   theme_minimal()
+p3.3
+ggsave ("figures/number_corr_quest.jpeg")  
+```
+
+# section 4 #
+
+# filter by correct questions per participant (>3 correct) #
+
+these are the participants who have responded to equal or more than 4 questions
+
+```{r}
+data_three_more <- data_no_corrq %>% 
+   filter(freq > 3) %>%  
+   group_by(pid) 
+head(data_three_more)
+```
+
+# 3 or less correct questions #
+
+```{r}
+data_three_less <- data_no_corrq %>% 
+   filter(freq < 4) %>%  
+   group_by(pid) 
+head(data_three_less)
+```
+
+
+# filter out from the main data participants who have equal or less than 3 correct questions - 5 people in total #
+
+this is in wide format
+
+## 4.1) data_pp ##
+
+character coding - good for plotting
+
+```{r}
+data_pp_filt5 <- data_pp %>%
+   filter(!pid %in% c('5','13','39','41','92')) 
+head(data_pp_filt5)
+```
+
+deviation coding
+
+```{r}
+data_ppd_filt5 <- data_ppd %>%
+   filter(!pid %in% c('5','13','39','41','92')) 
+head(data_ppd_filt5)
+```
+
+## 4.2) data_g ##
+
+```{r}
+data_g_filt5 <- data_g %>%
+  filter(!pid %in% c('5','13','39','41','92')) 
+head(data_g_filt5)
+```
+
+# filter the main data (in long format) by pre-reg exclusion criteria #
+
+this is in long format and is useful for general plotting 
+
+```{r}
+data_filt5 <- data_long %>%
+   filter(!pid %in% c('5','13','39','41','92')) %>%
+   unite("condition", training:image_type, sep="_") %>%
+   mutate(condition = factor(condition, 
+                             levels = c("pre_realism", "pre_sorolla", 
+                                        "post_realism", "post_sorolla", 
+                                        "post_sorolla_new",
+                                        "post_gauguin","post_merritt_chase")))
+
+head(data_filt5)
+str(data_filt5)
+```
+
+
+# section 5 #
+
+## plots ##
+
+## create summary data for 95%CIs across all data ##
+
+for 145 participants 
+
+summary data at the individual participant level
+
+by condition and dv (without training type just to compare to past work first)
+
+```{r}
+# by condition, dv
+data_mean_rating <- data_filt5 %>%
+  group_by(pid, condition, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(data_mean_rating)
+```
+
+by training_type, condition and dv
+
+(remember training type is a between group factor)
+
+```{r}
+# by training_type, condition, dv
+data_mean_rating_training_type <- data_filt5 %>%
+  group_by(pid, training_type, condition, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(data_mean_rating_training_type)
+```
+
+summary data at the group level
+
+by condition and dv (without training type just to compare to past work first)
+
+```{r}
+# by condition, dv
+datag_mean_rating <- data_filt5 %>%
+  group_by(condition, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(datag_mean_rating)
+```
+
+by training_type, condition and dv
+
+(remember training type is a between group factor)
+
+```{r}
+# by training_type, condition, dv
+datag_mean_rating_training_type <- data_filt5 %>%
+  group_by(training_type, condition, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(datag_mean_rating_training_type)
+```
+
+## plot ##
+
+figure settings
+
+```{r}
+## Set the amount of dodge in figures
+pd <- position_dodge(0.7)
+pd2 <- position_dodge(1)
+```
+
+
+compare to prior work first 
+
+```{r}
+# by condition & dv
+p5.1 <- ggplot(datag_mean_rating, 
+              aes(x=condition, y=mean, fill=condition)) + 
+   geom_jitter(data=data_mean_rating, aes(y=mean), position=position_jitterdodge(dodge.width =1), alpha = 1, colour = "darkgrey") +
+   geom_violin(data=data_mean_rating, aes(y=mean), alpha = 0.7, position=pd2) +
+   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=pd2) +
+   geom_line(aes(group=dv)) +
+   geom_point(position=pd2, size =3) +
+   scale_colour_brewer(palette = "Accent")+
+   scale_fill_brewer(palette = "Accent")+
+   # guides(fill = FALSE) +
+   labs(x="", y = "ratings (1-5)")+
+   #scale_y_continuous(breaks=seq(0,2,0.5), limits=c(0,5)) +
+   theme_bw()+
+   theme(text=element_text(size=25), title=element_text(size=25))+
+   theme(panel.grid.major = element_line(size = 0.1, linetype = 'solid', colour = "grey"))+
+   facet_wrap(~dv) +
+   ggtitle(" Ratings across all conditions ")
+p5.1
+
+ggsave ("figures/ratings145part.jpeg", plot = p5.1, width = 20, height = 13, units = "in", dpi = 300)
+
+# by training_type, condition, dv
+p5.2 <- ggplot(datag_mean_rating_training_type, 
+              aes(x=condition, y=mean, fill=condition)) + 
+   geom_jitter(data=data_mean_rating_training_type, aes(y=mean), position=position_jitterdodge(dodge.width =1), 
+               alpha = 1, colour = "darkgrey") +
+   geom_violin(data=data_mean_rating_training_type, aes(y=mean), alpha = 0.7, position=pd2) +
+   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=pd2) +
+   geom_line(aes(group=dv)) +
+   geom_point(position=pd2, size =3) +
+   scale_colour_brewer(palette = "Accent")+
+   scale_fill_brewer(palette = "Accent")+
+   # guides(fill = FALSE) +
+   labs(x="", y = "ratings (1-5)")+
+   #scale_y_continuous(breaks=seq(0,2,0.5), limits=c(0,5)) +
+   theme_bw()+
+   theme(text=element_text(size=25), title=element_text(size=25))+
+   theme(panel.grid.major = element_line(size = 0.1, linetype = 'solid', colour = "grey"))+
+   facet_grid(dv~training_type) +
+   ggtitle(" Ratings across all conditions ")
+p5.2
+
+ggsave ("figures/ratings145part_training_type.jpeg", plot = p5.2, width = 20, height = 13, units = "in", dpi = 300)
+```
+
+
+## now create plots that focus on the two analyses separately (rather than combined) ##
+
+So far, we have plotted all conditions together. That's fine and useful to get a sense of the data, but it doesn't follow our pre-registered partition of the data into two separate analyses. As such, it might be mentally easier to also visualise them separately. Otherwise, the plots get really busy, really fast.
+
+Note - there is probably a much more efficient way of doing this, but let's do it like this for now.
+
+Maybe the easiest way to go is take data_long (all the data in long format) and filter by pid from those with 3 or more correct (data_three_more) and by the relevant conditions. See below.
+
+# pre vs post #
+
+filter long data after pid exclusions and remove unnecessary conditions for pre vs post analysis
+
+(condition, c("pre_sorolla|post_sorolla|post_sorolla_new|post_gauguin|post_merritt_chase")))
+
+again, maybe do this first without splitting by training_type. That way, we have visuals that directly compare to the first experiment.
+
+
+```{r}
+data_long_pp <- data_long %>%
+   filter(!pid %in% c('5','13','39','41','92')) %>% # filter excluded pids
+   filter(str_detect(image_type, "gauguin|merritt_chase|sorolla_new", negate = TRUE)) # filter conditions
+head(data_long_pp)
+summary(data_long_pp)
+```
+
+summary data at the participant level
+
+```{r}
+# without training_type
+data_long_pp_summary <- data_long_pp %>%
+  group_by(pid, training, image_type, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>%
+  ungroup() 
+head(data_long_pp_summary)
+
+# with training_type
+data_long_pp_training <- data_long_pp %>%
+  group_by(pid, training, image_type, training_type, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>%
+  ungroup() 
+head(data_long_pp_training)
+```
+
+summary data at the group level
+
+by training, image_type and dv (without training type just to compare to past work first)
+
+```{r}
+# by training, image_type, dv
+datag_long_pp <- data_long_pp %>%
+  group_by(training, image_type, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(datag_long_pp)
+```
+
+by training_type, training, image_type and dv
+
+(remember training type is a between group factor)
+
+```{r}
+# by training_type, condition, dv
+datag_long_pp_training <- data_long_pp %>%
+  group_by(training_type, training, image_type, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(datag_long_pp_training)
+```
+
+plot
+
+without training_type - compare to past work 
+
+and include both reaslism and sorolla
+
+```{r}
+# without training_type - compare to past work 
+p5.3 <- ggplot(datag_long_pp, 
+              aes(x=training, y=mean, fill=training, shape=training)) + 
+   geom_jitter(data=data_long_pp_summary, aes(y=mean), position=position_jitterdodge(dodge.width =1), 
+               alpha = 1, colour = "darkgrey") +
+   geom_violin(data=data_long_pp_summary, aes(y=mean), alpha = 0.7, position=pd2) +
+   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=pd2) +
+   geom_point(position=pd2, size =3) +
+   geom_line(aes(group=image_type),position=pd2)+
+   scale_colour_brewer(palette = "Accent")+
+   scale_fill_brewer(palette = "Accent")+
+   labs(x="", y = "ratings (1-5)")+
+   theme_bw()+
+   theme(text=element_text(size=25), title=element_text(size=25),
+         panel.grid.major = element_line(size = 0.1, linetype = 'solid', colour = "grey"),
+         legend.position = "bottom")+
+   facet_grid(dv~image_type)+
+   ggtitle(" Ratings by training condition and image type")
+p5.3
+
+ggsave ("figures/ratings_pp.jpeg",plot = p5.3, width = 20, height = 13, units = "in", dpi = 300)
+```
+
+now with training type and only realism
+
+```{r}
+p5.4 <- ggplot(subset(datag_long_pp_training, image_type == "realism"), 
+              aes(x=training, y=mean, fill=training, shape=training)) + 
+   geom_jitter(data=subset(data_long_pp_training, image_type == "realism"), aes(y=mean),
+               position=position_jitterdodge(dodge.width =1), alpha = 1, colour = "darkgrey") +
+   geom_violin(data=subset(data_long_pp_training, image_type == "realism"), aes(y=mean), 
+               alpha = 0.7, position=pd2) +
+   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=pd2) +
+   geom_point(position=pd2, size =3) +
+   geom_line(aes(group=1),position=pd2)+
+   scale_colour_brewer(palette = "Accent")+
+   scale_fill_brewer(palette = "Accent")+
+   labs(x="", y = "ratings (1-5)")+
+   theme_bw()+
+   theme(text=element_text(size=25), title=element_text(size=25),
+         panel.grid.major = element_line(size = 0.1, linetype = 'solid', colour = "grey"),
+         legend.position = "bottom")+
+   facet_grid(dv~training_type)+
+   ggtitle("Realism ratings by training condition and training_type")
+p5.4
+
+ggsave ("figures/ratings_pp_realism_training_type.jpeg",plot = p5.2, width = 20, height = 13, units = "in", dpi = 300)
+```
+
+now with training type and sorolla 
+
+```{r}
+p5.5 <- ggplot(subset(datag_long_pp_training, image_type == "sorolla"), 
+              aes(x=training, y=mean, fill=training, shape=training)) + 
+   geom_jitter(data=subset(data_long_pp_summary_training_type, image_type == "sorolla"), aes(y=mean),
+               position=position_jitterdodge(dodge.width =1), alpha = 1, colour = "darkgrey") +
+   geom_violin(data=subset(data_long_pp_summary_training_type, image_type == "sorolla"), aes(y=mean), 
+               alpha = 0.7, position=pd2) +
+   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=pd2) +
+   geom_point(position=pd2, size =3) +
+   geom_line(aes(group=1),position=pd2)+
+   scale_colour_brewer(palette = "Accent")+
+   scale_fill_brewer(palette = "Accent")+
+   labs(x="", y = "ratings (1-5)")+
+   theme_bw()+
+   theme(text=element_text(size=25), title=element_text(size=25),
+         panel.grid.major = element_line(size = 0.1, linetype = 'solid', colour = "grey"),
+         legend.position = "bottom")+
+   facet_grid(dv~training_type)+
+   ggtitle("Sorolla ratings by training condition and training_type")
+p5.5
+
+ggsave ("figures/ratings_pp_sorolla_training_type.jpeg",plot = p5.5, width = 20, height = 13, units = "in", dpi = 300)
+```
+
+what about some density plots maybe??
+
+```{r}
+ggplot(data_long_pp, aes(x = ratings, fill = training)) +
+  geom_density(alpha = 0.7) +
+  facet_grid(training_type~image_type~dv) +
+  theme_bw()
+```
+
+```{r}
+ggplot(data_long_pp, aes(x = ratings, fill = training)) +
+  geom_histogram(alpha = 0.7, binwidth = 0.5, position = "identity") +
+  facet_grid(training_type~image_type~dv) +
+  theme_bw()
+```
+
+make ratings a factor - to try a stacked bar plot
+
+```{r}
+data_long_pp2 <- data_long_pp %>% 
+  mutate(ratings = factor(ratings))
+data_long_pp2
+```
+
+```{r}
+ggplot(data_long_pp2, aes(x=fct_rev(training))) +
+  geom_bar(aes(fill=fct_rev(ratings)), position = "fill") +
+  coord_flip() +
+  # theme(element_text(legend.title = "rating")) +
+  # scale_fill_brewer(palette = "Accent") +
+  facet_grid(training_type~image_type~dv)
+```
+
+only sorolla
+
+```{r}
+ggplot(subset(data_long_pp2, image_type = sorolla), aes(x=fct_rev(training))) +
+  geom_bar(aes(fill=fct_rev(ratings)), position = "fill") +
+  coord_flip() +
+  # theme(element_text(legend.title = "rating")) +
+  scale_fill_brewer(palette = "Accent") +
+  facet_grid(training_type~dv)
+```
+
+
+# generalisation # 
+
+again, maybe do this first without splitting by training_type. That way, we have visuals that directly compare to our prior work.
+
+filter long data after pid exclusions and remove unnecessary conditions for the generalisation analysis
+
+```{r}
+data_long_g <- data_long %>%
+   filter(!pid %in% c('5','13','39','41','92')) %>% # filter excluded pids
+  unite("condition", training:image_type, sep="_") %>% # combine training and image type
+  filter(str_detect(condition, c("pre_sorolla|post_sorolla|post_sorolla_new|post_gauguin|post_merritt_chase"))) %>%  # filter
+  mutate(condition = factor(condition, 
+          levels = c("pre_sorolla", "post_sorolla", "post_sorolla_new", "post_gauguin","post_merritt_chase")))
+head(data_long_g)
+summary(data_long_g)
+```
+
+summary data at the participant level
+
+```{r}
+# without training_type
+data_long_g_summary <- data_long_g %>%
+  group_by(pid, condition, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(data_long_g_summary)
+
+# with training_type
+data_long_g_training <- data_long_g %>%
+  group_by(pid, condition, training_type, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(data_long_g_training)
+```
+
+summary data at the group level
+
+```{r}
+# without training_type
+datag_long_g_summary <- data_long_g %>%
+  group_by(condition, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(datag_long_g_summary)
+
+# with training_type
+datag_long_g_training <- data_long_g %>%
+  group_by(condition, training_type, dv) %>%
+  summarise(mean=mean(ratings),
+            sd=sd(ratings),
+            n=n(),
+            sem=sd/sqrt(n),
+            ci=sem*1.96) %>% 
+  ungroup() 
+head(datag_long_g_training)
+```
+
+plot
+
+```{r}
+# without training_type
+p5.6 <- ggplot(datag_long_g_summary, 
+              aes(x=condition, y=mean, fill=condition)) + 
+   geom_jitter(data=data_long_g_summary, aes(y=mean), position=position_jitterdodge(dodge.width =1), alpha = 1, colour = "darkgrey") +
+   geom_violin(data=data_long_g_summary, aes(y=mean), alpha = 0.7, position=pd2) +
+   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=pd2) +
+   geom_point(position=pd2, size =3) +
+   geom_line(aes(group=condition),position=pd2,group=1)+
+   scale_colour_brewer(palette = "Accent")+
+   scale_fill_brewer(palette = "Accent")+
+   labs(x="", y = "ratings (1-5)")+
+   theme_bw()+
+   theme(text=element_text(size=25), title=element_text(size=25),
+         panel.grid.major = element_line(size = 0.1, linetype = 'solid', 
+                                         colour = "grey"),axis.text.x=element_blank(),
+         legend.position = "bottom")+
+   #facet_grid(training_type~dv)+
+   facet_wrap(~dv)+
+   ggtitle("Ratings by generalisation condition")
+ p5.6
+
+ggsave ("figures/ratings_g.jpeg",plot = p5.6, width = 20, height = 13, units = "in", dpi = 300)
+
+# with training_type
+p5.7 <- ggplot(datag_long_g_training, 
+              aes(x=condition, y=mean, fill=condition)) + 
+   geom_jitter(data=data_long_g_training, aes(y=mean), position=position_jitterdodge(dodge.width =1), 
+               alpha = 1, colour = "darkgrey") +
+   geom_violin(data=data_long_g_training, aes(y=mean), alpha = 0.7, position=pd2) +
+   geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.2, position=pd2) +
+   geom_point(position=pd2, size =3) +
+   geom_line(aes(group=condition),position=pd2,group=1)+
+   scale_colour_brewer(palette = "Accent")+
+   scale_fill_brewer(palette = "Accent")+
+   labs(x="", y = "ratings (1-5)")+
+   theme_bw()+
+   theme(text=element_text(size=25), title=element_text(size=25),
+         panel.grid.major = element_line(size = 0.1, linetype = 'solid', colour = "grey"),
+         axis.text.x=element_blank(),
+         legend.position = "bottom")+
+   facet_grid(dv~training_type)+
+   #facet_wrap(~dv)+
+   ggtitle("Ratings by generalisation condition")
+ p5.7
+
+ggsave ("figures/ratings_g_training_type.jpeg",plot = p5.7, width = 20, height = 13, units = "in", dpi = 300)
+```
+
+
+# section 6 #
+
+## save out a bunch of data files ##
+
+```{r}
+# data for all participants (before any exclusions) in long and wide formats
+write_csv(data_long, "data/data_long.csv")
+write_csv(data_wide, "data/data_wide.csv")
+
+# summary statistics at the individual participant level in long format
+write_csv(data_mean_rating, "data/data_mean_rating.csv")
+
+# pre vs post 
+# using character labels
+write_csv(data_pp, "data/data_pp.csv")
+# using deviation coding
+write_csv(data_ppd, "data/data_ppd.csv")
+
+# generalisation data
+write_csv(data_g, "data/data_g.csv")
+
+# attention checks correct questions and summary stats
+write_csv(data_corrq, "data/data_corrq.csv")
+write_csv(datac_q, "data/datac_q.csv")
+write_csv(data_perc, "data/data_perc.csv")
+
+# data following pre-registered exclusions in wide format (this will be used in the primary, pre-registered analysis)
+# all data
+write_csv(data_filt5, "data/data_filt5.csv")
+# pre vs post data
+write_csv(data_ppd_filt5, "data/data_ppd_filt5.csv")
+# generalisation data
+write_csv(data_g_filt5, "data/data_g_filt5.csv")
+
+# data for plotting purposes - split by analysis type and with pid exclusions
+# pre vs post analysis
+write_csv(data_long_pp, "data/data_long_pp.csv") # all trials
+write_csv(data_long_pp_summary, "data/data_long_pp_summary.csv") # participant summary
+write_csv(datag_long_pp, "data/datag_long_pp.csv") # group summary
+
+# split by training type
+# write_csv(data_long_pp_training, "data/data_long_pp_training_type.csv") # all trials
+write_csv(data_long_pp_training, "data/data_long_pp_training.csv") # participant summary
+write_csv(datag_long_pp_training, "data/datag_long_pp_training.csv") # group summary
+
+# generalisation analysis
+write_csv(data_long_g, "data/data_long_g.csv") # all trials
+write_csv(data_long_g_summary, "data/data_long_g_summary.csv") # participant summary
+write_csv(datag_long_g_summary, "data/datag_long_g_summary.csv") # group summary
+
+write_csv(data_long_g_training, "data/data_long_g_training.csv") # participant summary
+write_csv(datag_long_g_training, "data/datag_long_g_training.csv") # group summary
+```
+
+print session info
+
+```{r}
+sessionInfo()
+```
+
+
+
+

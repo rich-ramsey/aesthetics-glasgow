@@ -1,0 +1,526 @@
+---
+title: "models"
+author: "Rich & Ionela"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This file runs some models for the glasgow aesthetics project.
+
+## load the libraries that we will be using ## 
+
+## install ##
+
+```{r install-pkg}
+# install.packages("remotes")
+# remotes::install_github("stan-dev/cmdstanr")
+# 
+# install.packages("devtools")
+# devtools::install_github("jmgirard/standist")
+# 
+# install.packages(c("tidyverse", "RColorBrewer", "patchwork", "brms",
+#                    "tidybayes", "bayesplot", "future"))
+```
+
+take a snapshot of loaded packages and update the lock.file using renv
+
+```{r snapshot-renv}
+# take a snapshot and update the lock.file
+# renv::snapshot() # this is only necessary when new packages or installed or packages are updated.
+```
+
+## load ##
+
+```{r load-pkg}
+pkg <- c("cmdstanr", "standist", "tidyverse", "RColorBrewer", "patchwork", 
+         "brms", "tidybayes", "bayesplot", "future", "parallel")
+
+lapply(pkg, library, character.only = TRUE)
+```
+
+## settings ##
+
+```{r set-options}
+options(brms.backend = "cmdstanr",
+        mc.cores = parallel::detectCores(),
+        future.fork.enable = TRUE,
+        future.rng.onMisuse = "ignore") ## automatically set in RStudio
+
+supportsMulticore()
+
+detectCores()
+```
+
+## read in data and create factors where necessary ##
+
+```{r}
+# analysis 1 - pre vs post
+data_ppd_filt5 <- read_csv("data/data_ppd_filt5.csv") %>% 
+  mutate(pid = factor(pid),
+         item = factor(item),
+         training_type = factor(training_type, levels = c("none", "brief", "full")))
+head(data_ppd_filt5)
+str(data_ppd_filt5)
+
+# analysis 2 - generalisation effects
+data_g_filt5 <- read_csv("data/data_g_filt5.csv") %>%
+   mutate(pid = factor(pid),
+         item = factor(item),
+         condition = factor(condition, 
+         levels = c("pre_sorolla", "post_sorolla", "post_sorolla_new", "post_gauguin", "post_merritt_chase")),
+         training_type = factor(training_type, levels = c("none", "brief", "full")))
+head(data_g_filt5)
+str(data_g_filt5)
+```
+
+## load in previously saved models (as necessary) ##
+
+This is useful if you want to look at aspects of a previously compiled model
+
+```{r}
+# analysis 1
+bpp0.1 <- readRDS("models/bpp0.1.rds")
+bpp0.2 <- readRDS("models/bpp0.2.rds")
+bpp0.3 <- readRDS("models/bpp0.3.rds")
+bpp0.4 <- readRDS("models/bpp0.4.rds")
+bpp1 <- readRDS("models/bpp1.rds")
+bpp2 <- readRDS("models/bpp2.rds")
+bpp3 <- readRDS("models/bpp3.rds")
+bpp4.1 <- readRDS("models/bpp4.1.rds")
+bpp4.2 <- readRDS("models/bpp4.2.rds")
+bpp4.3 <- readRDS("models/bpp4.3.rds")
+bpp5.1 <- readRDS("models/bpp5.1.rds")
+bpp5.2 <- readRDS("models/bpp5.2.rds")
+# analysis 1 full model
+bpp5.3 <- readRDS("models/bpp5.3.rds")
+
+# analysis 2
+bg0.1 <- readRDS("models/bg0.1.rds")
+bg0.2 <- readRDS("models/bg0.2.rds")
+bg0.3 <- readRDS("models/bg0.3.rds")
+bg0.4 <- readRDS("models/bg0.4.rds")
+bg1 <- readRDS("models/bg1.rds")
+bg2 <- readRDS("models/bg2.rds")
+bg3.1 <- readRDS("models/bg3.1.rds")
+bg3.2 <- readRDS("models/bg3.2.rds")
+# analysis 2 full model
+bg3.3 <- readRDS("models/bg3.3.rds")
+
+```
+
+
+## create a smaller dataset just to test things ##
+
+```{r}
+# set.seed(123)
+
+data_pp_test <- data_ppd_filt5 %>%
+  filter(pid %in% c(1,2,51,52,101,102))
+head(data_pp_test)
+
+data_g_test <- data_g_filt5 %>% 
+  filter(pid %in% c(1,2,51,52,101,102))
+head(data_g_test)
+```
+
+
+
+## Analysis 1 - pre vs post ##
+
+# bpp0.1 - intercepts only #
+
+# formula #
+
+```{r}
+formula = bf(mvbind(understanding, creativity, thinking, challenge) ~ 1) + set_rescor(FALSE)
+```
+
+# check the priors available #
+
+```{r}
+get_prior(formula,
+          data = data_ppd_filt5, family = cumulative("probit"))
+```
+
+# set priors #
+
+Ionela - I narrowed the priors slightly here and throughout. I think that is reasonable given effects in psych being small, past data and the amount of data we have. And it should make sampling faster.
+
+```{r}
+priors <- set_prior("normal(0, 1)",
+                    class = "Intercept",
+                    resp = c("understanding", "creativity", "thinking", "challenge"))
+```
+
+# run the model #
+
+```{r}
+plan(multicore)
+bpp0.1t <- brm(formula = formula,
+        data = data_pp_test, family = cumulative("probit"),
+        prior = priors,
+        iter = 5000, warmup = 1000, cores = 4, chains = 4,
+        control = list(adapt_delta = 0.99, max_treedepth = 15),
+        save_pars = save_pars(all=TRUE),
+        seed = 123,
+        init = 0.1,
+        file = "models/bpp0.1t")
+summary(bpp0.1t)
+```
+
+this works fine with test data
+
+[[ok, so a bunch of incremental models would go in here now...]]
+
+and now let's kick off the beast and see how it gets on overnight
+
+
+and then the final model
+
+# bpp5.3 - add |a| for pID #
+
+# correlated varying effects across DVs for participants #
+
+# formula #
+
+```{r}
+formula = bf(mvbind(understanding, creativity, thinking, challenge) | thres(4, gr=item) ~ 1 + training * image_type * training_type +
+             (1 |p| item) +
+             (1 + training * image_type |a| pid)) + 
+             set_rescor(FALSE)
+```
+
+# check the priors available #
+
+```{r}
+get_prior(formula,
+          data = data_ppd_filt5, family = cumulative("probit"))
+```
+
+# set priors #
+
+```{r}
+priors <- c(
+  set_prior('normal(0, 1)', class = 'Intercept',
+            resp = c("understanding", "creativity", "thinking", "challenge")),
+    set_prior('normal(0, 0.5)', class = 'b',
+            resp = c("understanding", "creativity", "thinking", "challenge")),
+    set_prior('normal(0, 0.5)', class = 'sd',
+            resp = c("understanding", "creativity", "thinking", "challenge")),
+    set_prior('lkj(2)', class = 'cor')#SD 
+)
+```
+
+# run the model #
+
+```{r}
+# this will help us track time
+t1 <- Sys.time()
+
+plan(multicore)
+bpp5.3 <- brm(formula = formula,
+        data = data_ppd_filt5, family = cumulative("probit"),
+        prior = priors,
+        iter = 5000, warmup = 1000, cores = 10, chains = 4,
+        control = list(adapt_delta = 0.99, max_treedepth = 15),
+        save_pars = save_pars(all=TRUE),
+        seed = 123,
+        init = 0.1,
+        threads = threading(2),
+        file = "models/bpp5.3")
+summary(bpp5.3)
+
+t2 <- Sys.time()
+
+t2 - t1
+# Time difference of 6 hours imac
+```
+
+this looks good and we could probably do without running so many samples as an FYI.
+
+take a look
+
+pp_check 
+
+```{r}
+# (just the understanding dv for now to take a look)
+pp_bpp5.3 <- pp_check(bpp5.3, ndraws = 100, resp = "understanding")
+pp_bpp5.3
+```
+
+chains
+
+```{r}
+plot(bpp5.3)
+```
+
+
+
+## Analysis 2 - generalisation ##
+
+# generalisation effects #
+
+using 'condition' as a factor with five levels (pre_sorolla, post_sorolla, post_sorolla_new, post_gauguin, post_merritt_chase) with pre_sorolla as the reference category and also looking the interaction with training_type
+
+# bg0.1 - intercepts only #
+
+# formula #
+
+```{r}
+formula = bf(mvbind(understanding, creativity, thinking, challenge) ~ 1) + set_rescor(FALSE)
+```
+
+# check the priors available #
+
+```{r}
+get_prior(formula,
+          data = data_g_filt5, family = cumulative("probit"))
+```
+
+# set priors #
+
+```{r}
+priors <- set_prior("normal(0, 1)",
+                    class = "Intercept",
+                    resp = c("understanding", "creativity", "thinking", "challenge"))
+```
+
+# run the model #
+
+```{r}
+plan(multicore)
+bg0.1 <- brm(formula = formula,
+        data = data_g_filt5, family = cumulative("probit"),
+        prior = priors,
+        iter = 5000, warmup = 1000, cores = 10, chains = 4,
+        control = list(adapt_delta = 0.99, max_treedepth = 15),
+        save_pars = save_pars(all=TRUE),
+        seed = 123,
+        init = 0.1,
+        threads = threading(2),
+        file = "models/bg0.1")
+summary(bg0.1)
+```
+
+
+
+# bg3.3 - add |p| for items #
+
+# formula #
+
+```{r}
+formula = bf(mvbind(understanding, creativity, thinking, challenge) | thres(4, gr=item) ~ 1 + condition * training_type +
+             (1 |p| item) +
+             (1 + condition |a| pid)) + 
+             set_rescor(FALSE)
+```
+
+# check the priors available #
+
+```{r}
+get_prior(formula,
+          data = data_g_filt5, family = cumulative("probit"))
+```
+
+# set priors #
+
+```{r}
+priors <- c(
+  set_prior('normal(0, 1)', class = 'Intercept',
+            resp = c("understanding", "creativity", "thinking", "challenge")),
+    set_prior('normal(0, 0.5)', class = 'b',
+            resp = c("understanding", "creativity", "thinking", "challenge")),
+    set_prior('normal(0, 0.5)', class = 'sd',
+            resp = c("understanding", "creativity", "thinking", "challenge")),
+    set_prior('lkj(2)', class = 'cor')#SD 
+)
+```
+
+# run the model #
+
+```{r}
+# this will help us track time
+t1 <- Sys.time()
+
+plan(multicore)
+bg3.3 <- brm(formula = formula,
+        data = data_g_filt5, family = cumulative("probit"),
+        prior = priors,
+        iter = 5000, warmup = 1000, cores = 10, chains = 4,
+        control = list(adapt_delta = 0.99, max_treedepth = 15),
+        save_pars = save_pars(all=TRUE),
+        seed = 123,
+        init = 0.1,
+        threads = threading(2),
+        file = "models/bg3.3")
+summary(bg3.3)
+
+t2 <- Sys.time()
+
+t2 - t1
+
+# Time difference of ~ 24 hours imac.
+```
+
+take a look
+
+pp_check 
+
+```{r}
+# (just the understanding dv for now to take a look)
+pp_bg3.3 <- pp_check(bg3.3, ndraws = 100, resp = "understanding")
+pp_bg3.3
+```
+
+chains
+
+```{r}
+plot(bg3.3)
+```
+
+
+
+## model diagnostics ##
+
+## analysis 1 - pre vs. post ##
+
+```{r}
+postpp <- as_draws_df(bpp5.3)
+str(postpp)
+```
+
+# look at the chains for the key variables of interest #
+
+```{r}
+postpp1 <- postpp %>% 
+  select(contains(c("b_","chain")),
+         -contains(("Intercept"))) %>%  # here I select chains associated with fixed effects
+  mutate(chain = .chain)
+head(postpp1)
+```
+
+```{r}
+postpp2 <- postpp %>% 
+  select(contains(c("sd_", "chain"))) %>% # here I select chains associated with varying effects 
+  mutate(chain = .chain)
+head(postpp2)
+```
+
+plot them 
+
+```{r} 
+p_chainspp1 <- postpp1 %>% 
+  mcmc_trace(facet_args = list(ncol = 5)) +
+  scale_x_continuous(breaks = c(0, 4000)) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+p_chainspp1
+# save it
+ggsave ("figures/bpp5.3_b_chains.jpeg",
+        width = 20, height = 13, units = "in", dpi = 300)
+```
+
+```{r} 
+p_chainspp2 <- postpp2 %>% 
+  mcmc_trace(facet_args = list(ncol = 5)) +
+  scale_x_continuous(breaks = c(0, 4000)) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+p_chainspp2
+
+ggsave ("figures/bpp5.3_sd_chains.jpeg",
+        width = 20, height = 13, units = "in", dpi = 300)
+```
+
+# other diagnostics #
+
+```{r}
+# # these two below are worth reporting.
+bpp5.3_neff <- mcmc_plot(bpp5.3, type = "neff")
+bpp5.3_neff
+# ggsave("figures/bpp5.3_neff.jpeg")
+# 
+bpp5.3_rhat <- mcmc_plot(bpp5.3, type = "rhat")
+bpp5.3_rhat
+# ggsave("figures/bpp5.3_rhat.jpeg")
+# 
+bpp5.3_diag <- bpp5.3_neff / bpp5.3_rhat
+bpp5.3_diag
+ggsave("figures/bpp5.3_diag.jpeg")
+```
+
+
+## analysis 2 - generalisation ##
+
+## 2) generalisation - look at the chains #
+
+# take a look at model bg3.3 as a test case 3
+
+```{r}
+postg <- as_draws_df(bg3.3)
+str(postg)
+```
+
+# the chains for the key variables of interest #
+
+```{r}
+postg1 <- postg %>% 
+  select(contains(c("b_","chain")),
+         -contains(("Intercept"))) %>% # here I select chains associated with fixed effects
+  mutate(chain = .chain)
+head(postg1)
+```
+
+```{r}
+postg2 <- postg %>% 
+  select(contains(c("sd_", "chain"))) %>%  # here I select chains associated with random effects
+  mutate(chain = .chain)
+head(postg2)
+```
+
+and plot
+
+```{r} 
+p_chainsg1 <- postg1 %>% 
+  mcmc_trace(facet_args = list(ncol = 5)) +
+  scale_x_continuous(breaks = c(0, 4000)) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+p_chainsg1
+# save it
+ggsave ("figures/bg3.3_b_chains.jpeg",
+        width = 20, height = 13, units = "in", dpi = 300)
+```
+
+```{r} 
+p_chainsg2 <- postg2 %>% 
+  mcmc_trace(facet_args = list(ncol = 5)) +
+  scale_x_continuous(breaks = c(0, 4000)) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+p_chainsg2
+ggsave ("figures/bg3.3_sd_chains.jpeg",
+        width = 20, height = 13, units = "in", dpi = 300)
+```
+
+# other diagnostics #
+
+```{r}
+# these two below are worth reporting.
+bg3.3_neff <- mcmc_plot(bg3.3, type = "neff")
+bg3.3_neff
+# ggsave("figures/bg3.3_neff.jpeg")
+
+bg3.3_rhat <- mcmc_plot(bg3.3, type = "rhat")
+bg3.3_rhat
+# ggsave("figures/bg3.3_rhat.jpeg")
+
+bg3.3_diag <- bg3.3_neff / bg3.3_rhat
+bg3.3_diag
+ggsave("figures/bg3.3_diag.jpeg")
+```
+
